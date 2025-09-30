@@ -1,0 +1,311 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Pembiayaan - BPPKAD Blora</title>
+    <link rel="stylesheet" href="css/style.css">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+</head>
+<body>
+    <header>
+        <div class="container">
+            <div class="header-content">
+                <img src="assets/logo.png" alt="Logo BPPKAD" class="logo">
+                <div class="header-text">
+                    <h1>BPPKAD Kabupaten Blora</h1>
+                    <p>Realisasi Pembiayaan</p>
+                </div>
+            </div>
+            <nav>
+                <a href="index.html">Beranda</a>
+                <a href="pendapatan.html">Pendapatan</a>
+                <a href="pembelanjaan.html">Pembelanjaan</a>
+                <a href="pembiayaan.html" class="active">Pembiayaan</a>
+                <a href="admin.html" class="admin-link">Admin</a>
+            </nav>
+        </div>
+    </header>
+
+    <main class="container">
+        <section class="page-header">
+            <h2>Realisasi Pembiayaan</h2>
+            <p>Data realisasi pembiayaan daerah Kabupaten Blora</p>
+        </section>
+
+        <section class="filter-section">
+            <div class="filter-box">
+                <label for="yearFilter">Filter Tahun:</label>
+                <select id="yearFilter" onchange="loadCategoryData()">
+                    <option value="">Semua Tahun</option>
+                </select>
+            </div>
+        </section>
+
+        <section class="charts-section">
+            <div class="chart-container">
+                <h3>Pembiayaan per Subkategori</h3>
+                <canvas id="subcategoryChart"></canvas>
+            </div>
+
+            <div class="chart-container">
+                <h3>Trend Pembiayaan</h3>
+                <canvas id="trendChart"></canvas>
+            </div>
+        </section>
+
+        <section class="data-section">
+            <h3>Data Detail Pembiayaan</h3>
+            <div id="dataTable"></div>
+        </section>
+    </main>
+
+    <footer>
+        <div class="container">
+            <p>&copy; 2025 BPPKAD Kabupaten Blora. Semua hak dilindungi.</p>
+        </div>
+    </footer>
+
+    <script src="js/supabase.js"></script>
+    <script>
+        let subcategoryChart, trendChart;
+        const kategori = 'Pembiayaan';
+
+        async function loadCategoryData() {
+            const yearFilter = document.getElementById('yearFilter').value;
+            
+            try {
+                let query = supabase
+                    .from('apbd_data')
+                    .select('*')
+                    .eq('kategori', kategori);
+
+                if (yearFilter) {
+                    query = query.eq('tahun', parseInt(yearFilter));
+                }
+
+                const { data, error } = await query;
+                if (error) throw error;
+
+                createSubcategoryChart(data);
+                displayDataTable(data);
+            } catch (error) {
+                console.error('Error loading data:', error);
+            }
+        }
+
+        async function loadTrendData() {
+            try {
+                const { data, error } = await supabase
+                    .from('apbd_data')
+                    .select('*')
+                    .eq('kategori', kategori)
+                    .order('tahun', { ascending: true });
+
+                if (error) throw error;
+
+                createTrendChart(data);
+            } catch (error) {
+                console.error('Error loading trend data:', error);
+            }
+        }
+
+        function createSubcategoryChart(data) {
+            const ctx = document.getElementById('subcategoryChart');
+            
+            if (subcategoryChart) {
+                subcategoryChart.destroy();
+            }
+
+            if (!data || data.length === 0) {
+                ctx.parentElement.innerHTML = '<p class="no-data">Belum ada data untuk ditampilkan</p><canvas id="subcategoryChart"></canvas>';
+                return;
+            }
+
+            const groupedData = {};
+            data.forEach(item => {
+                if (!groupedData[item.subkategori]) {
+                    groupedData[item.subkategori] = 0;
+                }
+                groupedData[item.subkategori] += item.nilai;
+            });
+
+            const labels = Object.keys(groupedData);
+            const values = Object.values(groupedData);
+
+            subcategoryChart = new Chart(ctx, {
+                type: 'bar',
+                data: {
+                    labels: labels,
+                    datasets: [{
+                        label: 'Nilai (Rp)',
+                        data: values,
+                        backgroundColor: 'rgba(153, 102, 255, 0.7)',
+                        borderColor: 'rgba(153, 102, 255, 1)',
+                        borderWidth: 1
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: {
+                            display: false
+                        },
+                        tooltip: {
+                            callbacks: {
+                                label: function(context) {
+                                    return 'Nilai: ' + formatRupiah(context.parsed.y);
+                                }
+                            }
+                        }
+                    },
+                    scales: {
+                        y: {
+                            beginAtZero: true,
+                            ticks: {
+                                callback: function(value) {
+                                    return formatRupiahShort(value);
+                                }
+                            }
+                        }
+                    }
+                }
+            });
+        }
+
+        function createTrendChart(data) {
+            const ctx = document.getElementById('trendChart');
+            
+            if (trendChart) {
+                trendChart.destroy();
+            }
+
+            if (!data || data.length === 0) {
+                ctx.parentElement.innerHTML = '<p class="no-data">Belum ada data untuk ditampilkan</p><canvas id="trendChart"></canvas>';
+                return;
+            }
+
+            const yearlyData = {};
+            data.forEach(item => {
+                if (!yearlyData[item.tahun]) {
+                    yearlyData[item.tahun] = 0;
+                }
+                yearlyData[item.tahun] += item.nilai;
+            });
+
+            const sortedYears = Object.keys(yearlyData).sort();
+            const values = sortedYears.map(year => yearlyData[year]);
+
+            trendChart = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: sortedYears,
+                    datasets: [{
+                        label: 'Trend Pembiayaan',
+                        data: values,
+                        borderColor: 'rgba(153, 102, 255, 1)',
+                        backgroundColor: 'rgba(153, 102, 255, 0.2)',
+                        tension: 0.4,
+                        fill: true
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        tooltip: {
+                            callbacks: {
+                                label: function(context) {
+                                    return 'Nilai: ' + formatRupiah(context.parsed.y);
+                                }
+                            }
+                        }
+                    },
+                    scales: {
+                        y: {
+                            beginAtZero: true,
+                            ticks: {
+                                callback: function(value) {
+                                    return formatRupiahShort(value);
+                                }
+                            }
+                        }
+                    }
+                }
+            });
+        }
+
+        function displayDataTable(data) {
+            const tableDiv = document.getElementById('dataTable');
+            
+            if (!data || data.length === 0) {
+                tableDiv.innerHTML = '<p class="no-data">Belum ada data untuk ditampilkan</p>';
+                return;
+            }
+
+            let html = '<table><thead><tr><th>Subkategori</th><th>Tahun</th><th>Nilai (Rp)</th></tr></thead><tbody>';
+            
+            data.forEach(item => {
+                html += `<tr>
+                    <td>${item.subkategori}</td>
+                    <td>${item.tahun}</td>
+                    <td>${formatRupiah(item.nilai)}</td>
+                </tr>`;
+            });
+            
+            html += '</tbody></table>';
+            tableDiv.innerHTML = html;
+        }
+
+        async function populateYearFilter() {
+            try {
+                const { data, error } = await supabase
+                    .from('apbd_data')
+                    .select('tahun')
+                    .eq('kategori', kategori);
+
+                if (error) throw error;
+
+                const years = [...new Set(data.map(item => item.tahun))].sort((a, b) => b - a);
+                const select = document.getElementById('yearFilter');
+                
+                years.forEach(year => {
+                    const option = document.createElement('option');
+                    option.value = year;
+                    option.textContent = year;
+                    select.appendChild(option);
+                });
+            } catch (error) {
+                console.error('Error loading years:', error);
+            }
+        }
+
+        function formatRupiah(angka) {
+            return new Intl.NumberFormat('id-ID', {
+                style: 'currency',
+                currency: 'IDR',
+                minimumFractionDigits: 0
+            }).format(angka);
+        }
+
+        function formatRupiahShort(angka) {
+            if (angka >= 1000000000000) {
+                return 'Rp ' + (angka / 1000000000000).toFixed(1) + 'T';
+            } else if (angka >= 1000000000) {
+                return 'Rp ' + (angka / 1000000000).toFixed(1) + 'M';
+            } else if (angka >= 1000000) {
+                return 'Rp ' + (angka / 1000000).toFixed(1) + 'Jt';
+            }
+            return 'Rp ' + angka.toLocaleString('id-ID');
+        }
+
+        window.onload = function() {
+            populateYearFilter();
+            loadCategoryData();
+            loadTrendData();
+        };
+    </script>
+</body>
+</html>
